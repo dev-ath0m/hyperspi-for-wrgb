@@ -67,13 +67,13 @@
 #if defined(ARDUINO_ARCH_ESP32)
 	#if defined(CONFIG_IDF_TARGET_ESP32S2)
 		#ifdef NEOPIXEL_RGBW
-			#define LED_DRIVER NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s0Sk6812Method>
+			#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0Sk6812Method>
 		#elif NEOPIXEL_RGB
 			#define LED_DRIVER NeoPixelBus<NeoGrbFeature, NeoEsp32I2s0Ws2812xMethod>
 		#endif
 	#else
 		#ifdef NEOPIXEL_RGBW
-			#define LED_DRIVER NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s1Sk6812Method>
+			#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s1Sk6812Method>
 		#elif NEOPIXEL_RGB
 			#define LED_DRIVER NeoPixelBus<NeoGrbFeature, NeoEsp32I2s1Ws2812xMethod>
 		#endif
@@ -97,10 +97,10 @@
 			#ifdef NEOPIXEL_RGBW
 				#ifdef PARALLEL_MODE
 					#undef LED_DRIVER
-					#define LED_DRIVER NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s0X8Sk6812Method>
-					#define LED_DRIVER2 NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s0X8Sk6812Method>
+					#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0X8Sk6812Method>
+					#define LED_DRIVER2 NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0X8Sk6812Method>
 				#else
-					#define LED_DRIVER2 NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s0Sk6812Method>
+					#define LED_DRIVER2 NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0Sk6812Method>
 				#endif
 			#elif NEOPIXEL_RGB
 				#ifdef PARALLEL_MODE
@@ -115,10 +115,10 @@
 			#ifdef NEOPIXEL_RGBW
 				#ifdef PARALLEL_MODE
 					#undef LED_DRIVER
-					#define LED_DRIVER NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s1X8Sk6812Method>
-					#define LED_DRIVER2 NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s1X8Sk6812Method>
+					#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s1X8Sk6812Method>
+					#define LED_DRIVER2 NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s1X8Sk6812Method>
 				#else
-					#define LED_DRIVER2 NeoPixelBus<NeoGrbwFeature, NeoEsp32I2s0Sk6812Method>
+					#define LED_DRIVER2 NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0Sk6812Method>
 				#endif
 			#elif NEOPIXEL_RGB
 				#ifdef PARALLEL_MODE
@@ -149,7 +149,7 @@
 #else
 
 	#ifdef NEOPIXEL_RGBW
-		#define LED_DRIVER NeoPixelBus<NeoGrbwFeature, NeoEsp8266Uart1Sk6812Method>
+		#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp8266Uart1Sk6812Method>
 	#elif NEOPIXEL_RGB
 		#define LED_DRIVER NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart1Ws2812xMethod>
 	#elif SPILED_APA102
@@ -270,7 +270,8 @@ void setup()
 			#ifdef COLD_WHITE
 				calibrationConfig.setParamsAndPrepareCalibration(0xFF, 0xA0, 0xA0, 0xA0);
 			#else
-				calibrationConfig.setParamsAndPrepareCalibration(0xFF, 0xB0, 0xB0, 0x70);
+				// Equal calibration for neutral white WRGB strip
+				calibrationConfig.setParamsAndPrepareCalibration(0xFF, 0xB0, 0xB0, 0xB0);
 			#endif
 		#endif
 	#endif
@@ -287,9 +288,9 @@ void setup()
 		#if defined(NEOPIXEL_RGBW) || defined(NEOPIXEL_RGB)
 			#ifdef NEOPIXEL_RGBW
 				#ifdef COLD_WHITE
-					Serial.println("NeoPixelBus SK6812 cold GRBW. ");
+					Serial.println("NeoPixelBus SK6812 cold WRGB (custom). ");
 				#else
-					Serial.println("NeoPixelBus SK6812 neutral GRBW. ");
+					Serial.println("NeoPixelBus SK6812 neutral WRGB (custom). ");
 				#endif
 				calibrationConfig.printCalibration();
 			#else
