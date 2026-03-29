@@ -28,9 +28,15 @@
 #include <Arduino.h>
 
 #if defined(ARDUINO_ARCH_ESP32)
-	#if defined(CONFIG_IDF_TARGET_ESP32S2)
+	#if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
 		#define VSPI FSPI
-		#define VSPI_HOST FSPI_HOST
+		#define VSPI_HOST SPI2_HOST
+		#ifndef HSPI
+			#define HSPI FSPI
+		#endif
+		#ifndef HSPI_HOST
+			#define HSPI_HOST SPI2_HOST
+		#endif
 	#endif
 	#include <ESP32DMASPISlave.h>
 #else
@@ -65,7 +71,13 @@
 #pragma message(VAR_NAME_VALUE(SERIALCOM_SPEED))
 
 #if defined(ARDUINO_ARCH_ESP32)
-	#if defined(CONFIG_IDF_TARGET_ESP32S2)
+	#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		#ifdef NEOPIXEL_RGBW
+			#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32Rmt1Sk6812Method>
+		#elif NEOPIXEL_RGB
+			#define LED_DRIVER NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt1Ws2812xMethod>
+		#endif
+	#elif defined(CONFIG_IDF_TARGET_ESP32S2)
 		#ifdef NEOPIXEL_RGBW
 			#define LED_DRIVER NeoPixelBus<NeoWrgbFeature, NeoEsp32I2s0Sk6812Method>
 		#elif NEOPIXEL_RGB
@@ -85,15 +97,25 @@
 	#endif
 
 	#if defined(SECOND_SEGMENT_START_INDEX)
-		#if defined(NEOPIXEL_RGBW) || defined(NEOPIXEL_RGB)
+		// Parallel I2S X8 mode disabled — muxId 0 channel has output issues.
+		// Use separate I2S buses instead (I2S1 for strip 1, I2S0 for strip 2).
+		#if 0 && (defined(NEOPIXEL_RGBW) || defined(NEOPIXEL_RGB))
 			#define PARALLEL_MODE
 		#endif
 
 		#if defined(PARALLEL_MODE)
 			#pragma message("Using parallel mode for segments")
+		#else
+			#pragma message("Using separate I2S buses for segments")
 		#endif
 
-		#if defined(CONFIG_IDF_TARGET_ESP32S2)
+		#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			#ifdef NEOPIXEL_RGBW
+				#define LED_DRIVER2 NeoPixelBus<NeoWrgbFeature, NeoEsp32Rmt2Sk6812Method>
+			#elif NEOPIXEL_RGB
+				#define LED_DRIVER2 NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt2Ws2812xMethod>
+			#endif
+		#elif defined(CONFIG_IDF_TARGET_ESP32S2)
 			#ifdef NEOPIXEL_RGBW
 				#ifdef PARALLEL_MODE
 					#undef LED_DRIVER
@@ -329,15 +351,23 @@ void setup()
 
 		slave.setDataMode(SPI_MODE0);
 		slave.setMaxTransferSize(BUFFER_SIZE);
-		slave.setDMAChannel(1);
+		#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			slave.setDMAChannel(SPI_DMA_CH_AUTO);
+		#else
+			slave.setDMAChannel(1);
+		#endif
 		slave.setQueueSize(1);
 
-		#if defined(CONFIG_IDF_TARGET_ESP32S2)
-			// sck: 7, miso: 34 (no important), MOSI: 11, spi select: 12
-			slave.begin(VSPI, 7, 34, 11, 12);
+		bool spiOk;
+		#if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
+			// sck: 7, miso: 13 (not important), MOSI: 11, spi select: 12
+			spiOk = slave.begin(VSPI, 7, 13, 11, 12);
 		#else
-			slave.begin(VSPI);
+			spiOk = slave.begin(VSPI);
 		#endif
+		Serial.print("SPI slave init: ");
+		Serial.println(spiOk ? "OK" : "FAILED");
+		Serial.flush();
 
 		xTaskCreatePinnedToCore(task_wait_spi, "task_wait_spi", 2048, NULL, 2, &task_handle_wait_spi, CORE_TASK_SPI_SLAVE);
 		xTaskNotifyGive(task_handle_wait_spi);
@@ -375,7 +405,7 @@ void loop()
 	// print
 	unsigned long currentTime = millis();
 	unsigned long deltaTime = currentTime - statistics.getStartTime();
-	if (Serial && deltaTime > 3000)
+	if (deltaTime > 3000)
 		statistics.print(currentTime, base.processDataHandle, base.processSerialHandle);
 }
 
