@@ -237,13 +237,16 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 		}
 	}
 
+	volatile uint32_t spiRecvCount = 0;
+
 	void task_wait_spi(void *pvParameters)
 	{
 		while (1)
 		{
 			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-			slave.wait(spi_slave_rx_buf, spi_slave_tx_buf, BUFFER_SIZE);
+			bool ok = slave.wait(spi_slave_rx_buf, spi_slave_tx_buf, BUFFER_SIZE);
+			if (ok) spiRecvCount++;
 
 			xTaskNotifyGive(task_handle_process_buffer);
 		}
