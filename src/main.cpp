@@ -207,6 +207,16 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 	static TaskHandle_t task_handle_process_buffer = 0;
 	portMUX_TYPE spiMutex = portMUX_INITIALIZER_UNLOCKED;
 
+	volatile uint32_t spiRecvCount = 0;
+	volatile unsigned long lastSpiRecvTime = 0;
+
+	// SPI host device for direct ESP-IDF calls (matches library's initialize logic)
+	#if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
+		static constexpr spi_host_device_t spiHost = SPI2_HOST;
+	#else
+		static constexpr spi_host_device_t spiHost = VSPI_HOST;
+	#endif
+
 	void readSpi()
 	{
 		taskENTER_CRITICAL(&spiMutex);
@@ -228,6 +238,9 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 			spi_slave_rx_buf[REAL_BUFFER] = 0;
 			taskEXIT_CRITICAL(&spiMutex);
 
+			spiRecvCount++;
+			lastSpiRecvTime = millis();
+
 			if (base.processDataHandle != nullptr)
 				xSemaphoreGive(base.i2sXSemaphore);
 		}
@@ -237,36 +250,38 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 		}
 	}
 
-	volatile uint32_t spiRecvCount = 0;
-	volatile unsigned long lastSpiRecvTime = 0;
-
-	void task_wait_spi(void *pvParameters)
+	// Single SPI task: queue-based with timeout for recovery
+	void task_spi(void *pvParameters)
 	{
-		while (1)
-		{
-			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		spi_slave_transaction_t trans;
+		memset(&trans, 0, sizeof(trans));
 
-			bool ok = slave.wait(spi_slave_rx_buf, spi_slave_tx_buf, BUFFER_SIZE);
-			if (ok) {
-				spiRecvCount++;
-				lastSpiRecvTime = millis();
+		for (;;)
+		{
+			// Prepare transaction
+			trans.length = BUFFER_SIZE * 8;
+			trans.tx_buffer = spi_slave_tx_buf;
+			trans.rx_buffer = spi_slave_rx_buf;
+
+			// Queue and wait with 5-second timeout
+			esp_err_t e = spi_slave_transmit(slave.spiHostDevice(), &trans, pdMS_TO_TICKS(5000));
+
+			if (e == ESP_OK)
+			{
+				readSpi();
 			}
-
-			xTaskNotifyGive(task_handle_process_buffer);
-		}
-	}
-
-	void task_process_buffer(void *pvParameters)
-	{
-		while (1)
-		{
-			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-			readSpi();
-
-			slave.pop();
-
-			xTaskNotifyGive(task_handle_wait_spi);
+			else if (e == ESP_ERR_TIMEOUT)
+			{
+				// SPI stuck - if we previously got data, restart
+				if (lastSpiRecvTime > 0)
+				{
+					Serial.println("SPI timeout after receiving data, restarting...");
+					Serial.flush();
+					delay(50);
+					ESP.restart();
+				}
+				// else: never received, just keep trying
+			}
 		}
 	}
 
@@ -379,6 +394,9 @@ void setup()
 		xTaskCreatePinnedToCore(task_wait_spi, "task_wait_spi", 2048, NULL, 2, &task_handle_wait_spi, CORE_TASK_SPI_SLAVE);
 		xTaskNotifyGive(task_handle_wait_spi);
 		xTaskCreatePinnedToCore(task_process_buffer, "task_process_buffer", 2048, NULL, 2, &task_handle_process_buffer, CORE_TASK_PROCESS_BUFFER);
+
+		// SPI watchdog task on core 1 (independent of SPI tasks on core 0)
+		xTaskCreatePinnedToCore(task_spi_watchdog, "spi_watchdog", 2048, NULL, 1, NULL, 1);
 	#else
 		SPISlave.onData([](uint8_t *data, size_t len)
 			{
@@ -414,16 +432,5 @@ void loop()
 	unsigned long deltaTime = currentTime - statistics.getStartTime();
 	if (deltaTime > 3000)
 		statistics.print(currentTime, base.processDataHandle, base.processSerialHandle);
-
-	#if defined(ARDUINO_ARCH_ESP32)
-	// SPI watchdog: if we received data before but stopped for 5+ seconds, restart
-	if (lastSpiRecvTime > 0 && (currentTime - lastSpiRecvTime) > 5000)
-	{
-		Serial.println("SPI watchdog: no data for 5s, restarting...");
-		Serial.flush();
-		delay(50);
-		ESP.restart();
-	}
-	#endif
 }
 
