@@ -238,6 +238,7 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 	}
 
 	volatile uint32_t spiRecvCount = 0;
+	volatile unsigned long lastSpiRecvTime = 0;
 
 	void task_wait_spi(void *pvParameters)
 	{
@@ -246,7 +247,10 @@ static const uint32_t BUFFER_SIZE = REAL_BUFFER + 8;
 			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
 			bool ok = slave.wait(spi_slave_rx_buf, spi_slave_tx_buf, BUFFER_SIZE);
-			if (ok) spiRecvCount++;
+			if (ok) {
+				spiRecvCount++;
+				lastSpiRecvTime = millis();
+			}
 
 			xTaskNotifyGive(task_handle_process_buffer);
 		}
@@ -410,5 +414,16 @@ void loop()
 	unsigned long deltaTime = currentTime - statistics.getStartTime();
 	if (deltaTime > 3000)
 		statistics.print(currentTime, base.processDataHandle, base.processSerialHandle);
+
+	#if defined(ARDUINO_ARCH_ESP32)
+	// SPI watchdog: if we received data before but stopped for 5+ seconds, restart
+	if (lastSpiRecvTime > 0 && (currentTime - lastSpiRecvTime) > 5000)
+	{
+		Serial.println("SPI watchdog: no data for 5s, restarting...");
+		Serial.flush();
+		delay(50);
+		ESP.restart();
+	}
+	#endif
 }
 
